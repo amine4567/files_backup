@@ -1,36 +1,60 @@
-import os
-import json
-import shutil
 import datetime
+import os
+import shutil
 
+import click
 import send2trash
+import yaml
+
 
 timestamp_format = "%Y-%m-%dT%H_%M_%S"
-with open("config.json", "r") as f:
-    config = json.load(f)
+
+
+current_dir = os.path.dirname(os.path.realpath(__file__))
+with open(os.path.join(current_dir, "config.yaml")) as f:
+    config = yaml.load(f, Loader=yaml.FullLoader)
 
 default_target_dir = config["default_target_dir"]
-content_sources = config["sources"]
+default_nmax_backups = config["default_nmax_backups"]
+games_data_sources = config["sources"]
 
-for content in content_sources:
-    now = datetime.datetime.utcnow()
 
-    content_path = content["path"]
-    now_str = now.strftime(timestamp_format)
-    content_label = content["label"]
-    nmax_backups = content["nmax_backups"]
-
-    target_root = content.get("target_dir", default_target_dir)
-    target_main_dir = os.path.join(target_root, content_label)
-    target_dir_version = os.path.join(target_main_dir, now_str)
-
-    shutil.copytree(content["path"], target_dir_version)
-
-    backups_versions = os.listdir(target_main_dir)
+def check_backups(directory, nmax_backups):
+    backups_versions = os.listdir(directory)
     if len(backups_versions) > nmax_backups:
         backups_dates_map = {
             datetime.datetime.strptime(timestamp_str, timestamp_format): timestamp_str
             for timestamp_str in backups_versions
         }
-        file_to_remove = backups_dates_map[min(backups_dates_map.keys())]
-        send2trash.send2trash(os.path.join(target_main_dir, file_to_remove))
+        content_to_remove = backups_dates_map[min(backups_dates_map.keys())]
+        path_to_remove = os.path.join(directory, content_to_remove)
+        send2trash.send2trash(path_to_remove)
+
+
+def backup_game_data(name, settings):
+    now = datetime.datetime.utcnow()
+    now_str = now.strftime(timestamp_format)
+
+    nmax_backups = settings.get("nmax_backups", default_nmax_backups)
+    target_root = settings.get("target_dir", default_target_dir)
+
+    target_main_dir = os.path.join(target_root, name)
+    target_dir_version = os.path.join(target_main_dir, now_str)
+
+    data_paths = settings["paths"]
+    for source_label, source_path in data_paths.items():
+        shutil.copytree(source_path, os.path.join(target_dir_version, source_label))
+
+    check_backups(target_main_dir, nmax_backups)
+
+
+@click.command()
+@click.argument("game_name")
+def backup(game_name: str):
+    if game_name in games_data_sources.keys():
+        game_settings = games_data_sources[game_name]
+        backup_game_data(game_name, game_settings)
+
+
+if __name__ == "__main__":
+    backup()

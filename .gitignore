@@ -1,4 +1,6 @@
 .mypy_cache
 .vscode
 
-config.json
+config.yaml
+
+TODO.txt
